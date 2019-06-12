@@ -6,7 +6,7 @@
     <artifactId>http-pipeline</artifactId>
     <version>1.0-1-SNAPSHOT</version>
 
-    <name>http-pipeline ${project.version}</name>
+    <name>http-pipeline ${project.version} ${maven.build.timestamp}</name>
 
     <description>pipeline http requests</description>
 
@@ -33,6 +33,7 @@
         <sonar.java.coveragePlugin>jacoco</sonar.java.coveragePlugin>
 
         <jetty.version>9.4.17.v20190418</jetty.version>
+        <maven.build.timestamp.format>yyyyMMdd-HHmmss</maven.build.timestamp.format>
 
     </properties>
 
