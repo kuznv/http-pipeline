@@ -8,11 +8,14 @@ import com.payneteasy.http.pipeline.upstream.UpstreamExecutors;
 import com.payneteasy.startup.parameters.StartupParametersFactory;
 import io.prometheus.client.exporter.MetricsServlet;
 import io.prometheus.client.jetty.JettyStatisticsCollector;
+import io.prometheus.client.jetty.QueuedThreadPoolStatisticsCollector;
+import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.handler.StatisticsHandler;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
 public class HttpPipelineApplication {
     
@@ -26,7 +29,22 @@ public class HttpPipelineApplication {
     }
 
     private static Server createJettyServer(IStartupConfig aConfig) {
-        Server                jetty   = new Server(aConfig.webServerPort());
+        QueuedThreadPool threadPool = new QueuedThreadPool(
+                  aConfig.getJettyMaxThreads()
+                , aConfig.getJettyMinThreads()
+                , aConfig.getJettyIdleTimeoutMs()
+        );
+
+        new QueuedThreadPoolStatisticsCollector(threadPool, "server_thread_pool").register();
+
+        Server jetty = new Server(threadPool);
+
+        ServerConnector connector=new ServerConnector(jetty);
+
+        connector.setPort(aConfig.webServerPort());
+        jetty.setConnectors(new Connector[]{connector});
+
+
         ServletContextHandler context = new ServletContextHandler(jetty, aConfig.webServerContext(), ServletContextHandler.SESSIONS);
 
         registerJettyMetrics(jetty);

@@ -157,14 +157,14 @@
                         </ports>
                     </container>
                 </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>dockerBuild</goal>
-                        </goals>
-                        <phase>package</phase>
-                    </execution>
-                </executions>
+                <!--<executions>-->
+                    <!--<execution>-->
+                        <!--<goals>-->
+                            <!--<goal>build</goal>-->
+                        <!--</goals>-->
+                        <!--<phase>package</phase>-->
+                    <!--</execution>-->
+                <!--</executions>-->
             </plugin>
             
         </plugins>

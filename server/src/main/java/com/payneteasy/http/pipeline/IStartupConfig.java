@@ -33,4 +33,18 @@ public interface IStartupConfig {
 
     @AStartupParameter(name = "METRICS_SERVLET_PATH", value = "/metrics")
     String getMetricsServletPath();
+
+    /**
+     * Jetty max threads. The value should be from 50 to 500 as of https://www.eclipse.org/jetty/documentation/current/high-load.html
+     *
+     * @return max threads
+     */
+    @AStartupParameter(name = "JETTY_MAX_THREADS", value = "500")
+    int getJettyMaxThreads();
+
+    @AStartupParameter(name = "JETTY_MIN_THREADS", value = "16")
+    int getJettyMinThreads();
+
+    @AStartupParameter(name = "JETTY_POOL_IDLE_TIMEOUT_MS", value = "60000")
+    int getJettyIdleTimeoutMs();
 }
