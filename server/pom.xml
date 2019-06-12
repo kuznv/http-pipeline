@@ -152,7 +152,7 @@
                         </jvmFlags>
                         <mainClass>com.payneteasy.http.pipeline.HttpPipelineApplication</mainClass>
                         <ports>
-                            <port>8080</port>
+                            <port>8083</port>
                         </ports>
                     </container>
                 </configuration>
