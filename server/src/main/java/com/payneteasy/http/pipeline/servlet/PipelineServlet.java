@@ -45,8 +45,8 @@ public class PipelineServlet extends HttpServlet {
     protected void doPost(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
         LOG.debug("Received {}", aRequest.getRequestURI());
 
-        String id = aRequest.getRemoteAddr() + "/" + aRequest.getRequestURI() + "?" + aRequest.getQueryString();
-        Thread.currentThread().setName(id);
+        String id = aRequest.getRemoteAddr() + "-" + aRequest.getRequestURI() + "?" + aRequest.getQueryString();
+        Thread.currentThread().setName("jetty-" + id);
 
         String              query       = aRequest.getQueryString();
         Map<String, String> headers     = extractHeaders(aRequest);
@@ -58,16 +58,16 @@ public class PipelineServlet extends HttpServlet {
                 , connectionTimeoutMs
                 , readTimeoutMs);
 
-        LOG.debug("{}: Queuing {} ...", id, upstreamUrl);
+        LOG.debug("Queuing {} ...", upstreamUrl);
         ExecutorService      executor           = executors.findExecutor(aRequest.getRequestURI() + "/" + aRequest.getQueryString());
-        Future<HttpResponse> httpResponseFuture = executor.submit(new UpstreamTask("call-" + id, httpRequest));
+        Future<HttpResponse> httpResponseFuture = executor.submit(new UpstreamTask("upstr-" + id, httpRequest));
 
         try {
-
-            LOG.debug("{}: Waiting to be executed ...", id);
+            long startupTime = System.currentTimeMillis();
+            LOG.debug("Waiting to be executed in {}ms ...", waitingMs);
             HttpResponse upstreamResponse = httpResponseFuture.get(waitingMs, TimeUnit.MILLISECONDS);
             int          code       = upstreamResponse.getStatus();
-            LOG.debug("{}: Client result is {}", id, code);
+            LOG.debug("Client result is {}, time is {}ms", code, System.currentTimeMillis() - startupTime);
             if(code == 200) {
                 aResponse.setStatus(code);
                 aResponse.getOutputStream().write(upstreamResponse.getResponseBody());

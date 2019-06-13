@@ -16,7 +16,7 @@ public interface IStartupConfig {
     @AStartupParameter(name = "MANAGEMENT_SERVER_CONTEXT", value = "/")
     String managementServerContext();
 
-    @AStartupParameter(name = "UPSTREAM_BASE_URL", value = "http://localhost:8084")
+    @AStartupParameter(name = "UPSTREAM_BASE_URL", value = "http://localhost:8081")
     String getUpstreamBaseUrl();
 
     @AStartupParameter(name = "UPSTREAM_MAX_CONNECTIONS", value = "10")
@@ -53,4 +53,7 @@ public interface IStartupConfig {
 
     @AStartupParameter(name = "JETTY_POOL_IDLE_TIMEOUT_MS", value = "60000")
     int getJettyIdleTimeoutMs();
+
+    @AStartupParameter(name = "UPSTREAM_REQUESTS_BUCKETS", value = "0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120")
+    String getUpstreamRequestsBuckets();
 }

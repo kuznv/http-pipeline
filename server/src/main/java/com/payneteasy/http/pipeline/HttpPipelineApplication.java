@@ -7,45 +7,58 @@ import com.payneteasy.http.pipeline.upstream.UpstreamExecutor;
 import com.payneteasy.http.pipeline.upstream.UpstreamExecutors;
 import com.payneteasy.startup.parameters.StartupParametersFactory;
 import io.prometheus.client.exporter.MetricsServlet;
+import io.prometheus.client.filter.MetricsFilter;
+import io.prometheus.client.hotspot.DefaultExports;
 import io.prometheus.client.jetty.JettyStatisticsCollector;
 import io.prometheus.client.jetty.QueuedThreadPoolStatisticsCollector;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.handler.StatisticsHandler;
+import org.eclipse.jetty.servlet.FilterHolder;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.servlet.DispatcherType;
+import java.util.EnumSet;
+
 public class HttpPipelineApplication {
 
     private static final Logger LOG = LoggerFactory.getLogger(HttpPipelineApplication.class);
 
-    public static void main(String[] args) throws Exception {
-        long startupTime = System.currentTimeMillis();
+    public static void main(String[] args) {
+        try {
+            long startupTime = System.currentTimeMillis();
 
-        IStartupConfig startupConfig = StartupParametersFactory.getStartupParameters(IStartupConfig.class);
+            IStartupConfig startupConfig = StartupParametersFactory.getStartupParameters(IStartupConfig.class);
 
-        {
-            Server jetty = createJettyServer(startupConfig);
-            jetty.start();
-            jetty.setStopAtShutdown(true);
+            {
+                Server jetty = createJettyServer(startupConfig);
+                jetty.start();
+                jetty.setStopAtShutdown(true);
+            }
+
+            {
+                Server managementServer = createManagementServer(startupConfig);
+                managementServer.start();
+                managementServer.setStopAtShutdown(true);
+            }
+
+            LOG.info("Servers started time is {}ms", System.currentTimeMillis() - startupTime);
+        } catch (Exception e) {
+            LOG.error("Cannot start server", e);
+            System.exit(-1);
         }
-
-        {
-            Server managementServer = createManagementServer(startupConfig);
-            managementServer.start();
-            managementServer.setStopAtShutdown(true);
-        }
-
-        LOG.info("Servers started time is {}ms", System.currentTimeMillis() - startupTime);
     }
 
     private static Server createManagementServer(IStartupConfig aStartupConfig) {
         Server                jetty   = new Server(aStartupConfig.managementServerPort());
         ServletContextHandler context = new ServletContextHandler(jetty, aStartupConfig.managementServerContext(), ServletContextHandler.SESSIONS);
+
+        DefaultExports.initialize();
 
         context.addServlet(new ServletHolder(new VersionServlet()), "/version/*");
         context.addServlet(new ServletHolder(new MetricsServlet()), aStartupConfig.getMetricsServletPath());
@@ -85,8 +98,26 @@ public class HttpPipelineApplication {
                 , aConfig.getUpstreamReadTimeoutMs()
                 , aConfig.getUpstreamWaitTimeoutMs()
         );
+
+        MetricsFilter filter = new MetricsFilter("requests"
+                , "The time taken fulfilling servlet requests"
+                , -1
+                , getUpstreamRequestsBuckets(aConfig.getUpstreamRequestsBuckets())
+        );
+        context.addFilter(new FilterHolder(filter), "/*", EnumSet.of(DispatcherType.REQUEST));
         context.addServlet(new ServletHolder(pipelineServlet), aConfig.getPipelineServletPath());
         return jetty;
+    }
+
+    private static double[] getUpstreamRequestsBuckets(String aText) {
+        String[] bucketParams = aText.split(",");
+        double[] buckets = new double[bucketParams.length];
+
+        for (int i = 0; i < bucketParams.length; i++) {
+            buckets[i] = Double.parseDouble(bucketParams[i]);
+        }
+
+        return buckets;
     }
 
     private static void registerExecutorsMetrics(UpstreamExecutors executors) {
