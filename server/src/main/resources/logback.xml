@@ -8,6 +8,7 @@
     </appender>
 
     <logger name="com.payneteasy" level="DEBUG" />
+    <!--<logger name="org.eclipse.jetty.util.thread" level="DEBUG" />-->
 
     <root level="info">
         <appender-ref ref="STDOUT" />

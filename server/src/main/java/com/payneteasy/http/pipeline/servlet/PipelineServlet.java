@@ -17,11 +17,13 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class PipelineServlet extends HttpServlet {
 
     private static final Logger LOG = LoggerFactory.getLogger(PipelineServlet.class);
 
+    private final AtomicLong        serial = new AtomicLong();
     private final String            upstreamBaseUrl;
     private final UpstreamExecutors executors;
     private final int               connectionTimeoutMs;
@@ -43,64 +45,70 @@ public class PipelineServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
-        LOG.debug("Received {}", aRequest.getRequestURI());
+        LOG.debug("Received {}?{}", aRequest.getRequestURI(), aRequest.getQueryString());
 
-        String id = aRequest.getRemoteAddr() + "-" + aRequest.getRequestURI() + "?" + aRequest.getQueryString();
-        Thread.currentThread().setName("jetty-" + id);
-
-        String              query       = aRequest.getQueryString();
-        Map<String, String> headers     = extractHeaders(aRequest);
-        String              upstreamUrl = createUpstreamUrl(upstreamBaseUrl, aRequest.getRequestURI(), query);
-
-        HttpRequest httpRequest = new HttpRequest(upstreamUrl
-                , headers
-                , InputStreams.readFully(aRequest.getInputStream(), aRequest.getContentLength())
-                , connectionTimeoutMs
-                , readTimeoutMs);
-
-        LOG.debug("Queuing {} ...", upstreamUrl);
-        ExecutorService      executor           = executors.findExecutor(aRequest.getRequestURI() + "/" + aRequest.getQueryString());
-        Future<HttpResponse> httpResponseFuture = executor.submit(new UpstreamTask("upstr-" + id, httpRequest));
+        String id = aRequest.getRemoteAddr() + "-" + aRequest.getRequestURI() + "?" + aRequest.getQueryString() + "-" + serial.incrementAndGet();
+        Thread currentThread = Thread.currentThread();
+        String oldThreadName = currentThread.getName();
+        currentThread.setName("jetty-" + id);
 
         try {
-            long startupTime = System.currentTimeMillis();
-            LOG.debug("Waiting to be executed in {}ms ...", waitingMs);
-            HttpResponse upstreamResponse = httpResponseFuture.get(waitingMs, TimeUnit.MILLISECONDS);
-            int          code       = upstreamResponse.getStatus();
-            LOG.debug("Client result is {}, time is {}ms", code, System.currentTimeMillis() - startupTime);
-            if(code == 200) {
-                aResponse.setStatus(code);
-                aResponse.getOutputStream().write(upstreamResponse.getResponseBody());
-            } else {
-                aResponse.setStatus(code);
-                if(upstreamResponse.getResponseBody() == null) {
-                    LOG.warn("No response content from upstream");
+            String              query       = aRequest.getQueryString();
+            Map<String, String> headers     = extractHeaders(aRequest);
+            String              upstreamUrl = createUpstreamUrl(upstreamBaseUrl, aRequest.getRequestURI(), query);
+
+            HttpRequest httpRequest = new HttpRequest(upstreamUrl
+                    , headers
+                    , InputStreams.readFully(aRequest.getInputStream(), aRequest.getContentLength())
+                    , connectionTimeoutMs
+                    , readTimeoutMs);
+
+            LOG.debug("Queuing {} ...", upstreamUrl);
+            ExecutorService      executor           = executors.findExecutor(aRequest.getRequestURI() + "/" + aRequest.getQueryString());
+            Future<HttpResponse> httpResponseFuture = executor.submit(new UpstreamTask("upstr-" + id, httpRequest));
+
+            try {
+                long startupTime = System.currentTimeMillis();
+                LOG.debug("Waiting to be executed in {}ms ...", waitingMs);
+                HttpResponse upstreamResponse = httpResponseFuture.get(waitingMs, TimeUnit.MILLISECONDS);
+                int          code       = upstreamResponse.getStatus();
+                LOG.debug("Client result is {}, time is {}ms", code, System.currentTimeMillis() - startupTime);
+                if(code == 200) {
+                    aResponse.setStatus(code);
+                    aResponse.getOutputStream().write(upstreamResponse.getResponseBody());
                 } else {
-                    String body = new String(upstreamResponse.getResponseBody());
-                    LOG.debug("Sending error body {}", body);
-                    aResponse.getWriter().write(body);
+                    aResponse.setStatus(code);
+                    if(upstreamResponse.getResponseBody() == null) {
+                        LOG.warn("No response content from upstream");
+                    } else {
+                        String body = new String(upstreamResponse.getResponseBody());
+                        LOG.debug("Sending error body {}", body);
+                        aResponse.getWriter().write(body);
+                    }
+
                 }
 
+
+            } catch (InterruptedException e) {
+
+                currentThread.interrupt();
+                LOG.warn("Interrupted", e);
+                aResponse.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+
+            } catch (ExecutionException e) {
+
+                LOG.error("Task aborted", e);
+                aResponse.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+
+            } catch (TimeoutException e) {
+
+                boolean cancelResult = httpResponseFuture.cancel(false);
+                LOG.error("Timeout exception: cancel={}", cancelResult, e);
+                aResponse.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+
             }
-
-
-        } catch (InterruptedException e) {
-
-            Thread.currentThread().interrupt();
-            LOG.warn("Interrupted", e);
-            aResponse.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-
-        } catch (ExecutionException e) {
-
-            LOG.error("Task aborted", e);
-            aResponse.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-
-        } catch (TimeoutException e) {
-
-            boolean cancelResult = httpResponseFuture.cancel(false);
-            LOG.error("Timeout exception: cancel={}", cancelResult, e);
-            aResponse.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-
+        } finally {
+            currentThread.setName(oldThreadName);
         }
 
     }

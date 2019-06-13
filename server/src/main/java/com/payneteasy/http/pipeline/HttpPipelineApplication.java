@@ -1,6 +1,7 @@
 package com.payneteasy.http.pipeline;
 
 import com.payneteasy.http.pipeline.metrics.ThreadPoolExecutorCollector;
+import com.payneteasy.http.pipeline.metrics.UpstreamExecutorsCollector;
 import com.payneteasy.http.pipeline.servlet.PipelineServlet;
 import com.payneteasy.http.pipeline.servlet.VersionServlet;
 import com.payneteasy.http.pipeline.upstream.UpstreamExecutor;
@@ -23,6 +24,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.servlet.DispatcherType;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.EnumSet;
 
 public class HttpPipelineApplication {
@@ -35,14 +40,18 @@ public class HttpPipelineApplication {
 
             IStartupConfig startupConfig = StartupParametersFactory.getStartupParameters(IStartupConfig.class);
 
+            UpstreamExecutors executors = new UpstreamExecutors(startupConfig.getUpstreamMaxConnections(), startupConfig.getUpstreamQueueSize(), startupConfig.getUpstreamActiveConnections());
+            registerExecutorsMetrics(executors);
+            Runtime.getRuntime().addShutdownHook(new Thread(executors::stop));
+
             {
-                Server jetty = createJettyServer(startupConfig);
+                Server jetty = createJettyServer(startupConfig, executors);
                 jetty.start();
                 jetty.setStopAtShutdown(true);
             }
 
             {
-                Server managementServer = createManagementServer(startupConfig);
+                Server managementServer = createManagementServer(startupConfig, executors);
                 managementServer.start();
                 managementServer.setStopAtShutdown(true);
             }
@@ -54,7 +63,7 @@ public class HttpPipelineApplication {
         }
     }
 
-    private static Server createManagementServer(IStartupConfig aStartupConfig) {
+    private static Server createManagementServer(IStartupConfig aStartupConfig, UpstreamExecutors executors) {
         Server                jetty   = new Server(aStartupConfig.managementServerPort());
         ServletContextHandler context = new ServletContextHandler(jetty, aStartupConfig.managementServerContext(), ServletContextHandler.SESSIONS);
 
@@ -62,22 +71,35 @@ public class HttpPipelineApplication {
 
         context.addServlet(new ServletHolder(new VersionServlet()), "/version/*");
         context.addServlet(new ServletHolder(new MetricsServlet()), aStartupConfig.getMetricsServletPath());
+        context.addServlet(new ServletHolder(new HttpServlet() {
+            @Override
+            protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+                resp.getWriter().println(executors.getActiveExecutorsCount());
+            }
+
+            @Override
+            protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+                executors.setActiveExecutors(Integer.parseInt(req.getParameter("count")));
+                resp.getWriter().println(executors.getActiveExecutorsCount());
+            }
+        }), "/active-executors/*");
 
         return jetty;
     }
 
-    private static Server createJettyServer(IStartupConfig aConfig) {
+    private static Server createJettyServer(IStartupConfig aConfig, UpstreamExecutors executors) {
         QueuedThreadPool threadPool = new QueuedThreadPool(
                   aConfig.getJettyMaxThreads()
                 , aConfig.getJettyMinThreads()
                 , aConfig.getJettyIdleTimeoutMs()
         );
+        threadPool.setName("server_thread_pool");
 
         new QueuedThreadPoolStatisticsCollector(threadPool, "server_thread_pool").register();
 
         Server jetty = new Server(threadPool);
 
-        ServerConnector connector=new ServerConnector(jetty);
+        ServerConnector connector = new ServerConnector(jetty);
 
         connector.setPort(aConfig.webServerPort());
         jetty.setConnectors(new Connector[]{connector});
@@ -86,10 +108,6 @@ public class HttpPipelineApplication {
         ServletContextHandler context = new ServletContextHandler(jetty, aConfig.webServerContext(), ServletContextHandler.SESSIONS);
 
         registerJettyMetrics(jetty);
-
-        UpstreamExecutors executors = new UpstreamExecutors(aConfig.getUpstreamMaxConnections(), aConfig.getUpstreamQueueSize());
-        registerExecutorsMetrics(executors);
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> executors.stop()));
 
         PipelineServlet pipelineServlet = new PipelineServlet(
                 aConfig.getUpstreamBaseUrl()
@@ -121,6 +139,7 @@ public class HttpPipelineApplication {
     }
 
     private static void registerExecutorsMetrics(UpstreamExecutors executors) {
+        new UpstreamExecutorsCollector(executors).register();
         int i = 0;
         for (UpstreamExecutor upstreamExecutor : executors.geExecutors()) {
             new ThreadPoolExecutorCollector("executor_" + (i++), "help", upstreamExecutor).register();

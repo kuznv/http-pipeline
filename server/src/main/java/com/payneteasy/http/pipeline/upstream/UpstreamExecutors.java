@@ -14,9 +14,14 @@ public class UpstreamExecutors {
 
     private static final Logger LOG = LoggerFactory.getLogger(UpstreamExecutors.class);
 
-    private final UpstreamExecutor[] executors;
+    private volatile int                activeExecutors;
+    private final    UpstreamExecutor[] executors;
 
-    public UpstreamExecutors(int aCount, int aQueueSize) {
+    public UpstreamExecutors(int aCount, int aQueueSize, int aActiveExecutors) {
+        if(aActiveExecutors > aCount) {
+            throw new IllegalArgumentException("ActiveExecutors should be less or equal to count");
+        }
+        activeExecutors = aActiveExecutors;
         executors = createExecutors(aCount, aQueueSize);
     }
 
@@ -30,7 +35,8 @@ public class UpstreamExecutors {
 
     public ExecutorService findExecutor(String aKey) {
         int hash = aKey.hashCode();
-        int index = Math.abs(hash % executors.length);
+        int index = Math.abs(hash % activeExecutors);
+        LOG.debug("Found executor at index {} (hash={}, active={})", index, hash, activeExecutors);
         return executors[index];
     }
 
@@ -40,6 +46,16 @@ public class UpstreamExecutors {
             queues.add(executor.getQueue());
         }
         return queues;
+    }
+
+    public void setActiveExecutors(int aCount) {
+        if(aCount > executors.length) {
+            throw new IllegalArgumentException("Trying to set more than " + executors.length + " active executors ");
+        }
+        if(aCount < 1) {
+            throw new IllegalArgumentException("Active executors should be more than 0");
+        }
+        activeExecutors = aCount;
     }
 
     public List<UpstreamExecutor> geExecutors() {
@@ -65,5 +81,13 @@ public class UpstreamExecutors {
                 LOG.debug("Skip interruption");
             }
         }
+    }
+
+    public int getActiveExecutorsCount() {
+        return activeExecutors;
+    }
+
+    public int getMaxExecutorsCount() {
+        return executors.length;
     }
 }

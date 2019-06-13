@@ -19,8 +19,11 @@ public interface IStartupConfig {
     @AStartupParameter(name = "UPSTREAM_BASE_URL", value = "http://localhost:8081")
     String getUpstreamBaseUrl();
 
-    @AStartupParameter(name = "UPSTREAM_MAX_CONNECTIONS", value = "10")
+    @AStartupParameter(name = "UPSTREAM_MAX_CONNECTIONS", value = "20")
     int getUpstreamMaxConnections();
+
+    @AStartupParameter(name = "UPSTREAM_ACTIVE_CONNECTIONS", value = "10")
+    int getUpstreamActiveConnections();
 
     @AStartupParameter(name = "UPSTREAM_CONNECT_TIMEOUT_MS", value = "60000")
     int getUpstreamConnectTimeoutMs();
