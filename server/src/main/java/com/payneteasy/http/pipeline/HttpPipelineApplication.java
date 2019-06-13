@@ -16,16 +16,41 @@ import org.eclipse.jetty.server.handler.StatisticsHandler;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class HttpPipelineApplication {
-    
+
+    private static final Logger LOG = LoggerFactory.getLogger(HttpPipelineApplication.class);
+
     public static void main(String[] args) throws Exception {
+        long startupTime = System.currentTimeMillis();
 
         IStartupConfig startupConfig = StartupParametersFactory.getStartupParameters(IStartupConfig.class);
 
-        Server jetty = createJettyServer(startupConfig);
-        jetty.start();
-        jetty.setStopAtShutdown(true);
+        {
+            Server jetty = createJettyServer(startupConfig);
+            jetty.start();
+            jetty.setStopAtShutdown(true);
+        }
+
+        {
+            Server managementServer = createManagementServer(startupConfig);
+            managementServer.start();
+            managementServer.setStopAtShutdown(true);
+        }
+
+        LOG.info("Servers started time is {}ms", System.currentTimeMillis() - startupTime);
+    }
+
+    private static Server createManagementServer(IStartupConfig aStartupConfig) {
+        Server                jetty   = new Server(aStartupConfig.managementServerPort());
+        ServletContextHandler context = new ServletContextHandler(jetty, aStartupConfig.managementServerContext(), ServletContextHandler.SESSIONS);
+
+        context.addServlet(new ServletHolder(new VersionServlet()), "/version/*");
+        context.addServlet(new ServletHolder(new MetricsServlet()), aStartupConfig.getMetricsServletPath());
+
+        return jetty;
     }
 
     private static Server createJettyServer(IStartupConfig aConfig) {
@@ -61,8 +86,6 @@ public class HttpPipelineApplication {
                 , aConfig.getUpstreamWaitTimeoutMs()
         );
         context.addServlet(new ServletHolder(pipelineServlet), aConfig.getPipelineServletPath());
-        context.addServlet(new ServletHolder(new VersionServlet()), "/version/*");
-        context.addServlet(new ServletHolder(new MetricsServlet()), aConfig.getMetricsServletPath());
         return jetty;
     }
 

@@ -7,8 +7,14 @@ public interface IStartupConfig {
     @AStartupParameter(name = "WEB_SERVER_PORT", value = "8083")
     int webServerPort();
 
-    @AStartupParameter(name = "WEB_SERVER_CONTEXT", value = "/api")
+    @AStartupParameter(name = "MANAGEMENT_SERVER_PORT", value = "8084")
+    int managementServerPort();
+
+    @AStartupParameter(name = "WEB_SERVER_CONTEXT", value = "/")
     String webServerContext();
+
+    @AStartupParameter(name = "MANAGEMENT_SERVER_CONTEXT", value = "/")
+    String managementServerContext();
 
     @AStartupParameter(name = "UPSTREAM_BASE_URL", value = "http://localhost:8084")
     String getUpstreamBaseUrl();
@@ -31,11 +37,11 @@ public interface IStartupConfig {
     @AStartupParameter(name = "PIPELINE_SERVLET_PATH", value = "/*")
     String getPipelineServletPath();
 
-    @AStartupParameter(name = "METRICS_SERVLET_PATH", value = "/metrics")
+    @AStartupParameter(name = "MANAGEMENT_METRICS_PATH", value = "/metrics")
     String getMetricsServletPath();
 
     /**
-     * Jetty max threads. The value should be from 50 to 500 as of https://www.eclipse.org/jetty/documentation/current/high-load.html
+     * Jetty max threads. The value could be from 50 to 500 as of https://www.eclipse.org/jetty/documentation/current/high-load.html
      *
      * @return max threads
      */
