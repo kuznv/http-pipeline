@@ -12,11 +12,16 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class PipelineServlet extends HttpServlet {
@@ -28,19 +33,22 @@ public class PipelineServlet extends HttpServlet {
     private final UpstreamExecutors executors;
     private final int               connectionTimeoutMs;
     private final int               readTimeoutMs;
-    private final int               waitingMs;
+    private final AtomicInteger     waitingMs;
+    private final File              errorDir;
 
     public PipelineServlet(String upstreamBaseUrl
             , UpstreamExecutors aExecutors
             , int aConnectionTimeoutMs
             , int aReadTimeoutMs
-            , int aWaitingMs
+            , AtomicInteger aWaitingMs
+            , File aErrorDir
     ) {
         this.upstreamBaseUrl = upstreamBaseUrl;
         executors = aExecutors;
         readTimeoutMs = aReadTimeoutMs;
         connectionTimeoutMs = aConnectionTimeoutMs;
         waitingMs = aWaitingMs;
+        errorDir = aErrorDir;
     }
 
     @Override
@@ -64,13 +72,13 @@ public class PipelineServlet extends HttpServlet {
                     , readTimeoutMs);
 
             LOG.debug("Queuing {} ...", upstreamUrl);
-            ExecutorService      executor           = executors.findExecutor(aRequest.getRequestURI() + "/" + aRequest.getQueryString());
+            ExecutorService      executor           = executors.findExecutor(generateExecutorKey(aRequest));
             Future<HttpResponse> httpResponseFuture = executor.submit(new UpstreamTask("upstr-" + id, httpRequest));
 
             try {
                 long startupTime = System.currentTimeMillis();
                 LOG.debug("Waiting to be executed in {}ms ...", waitingMs);
-                HttpResponse upstreamResponse = httpResponseFuture.get(waitingMs, TimeUnit.MILLISECONDS);
+                HttpResponse upstreamResponse = httpResponseFuture.get(waitingMs.get(), TimeUnit.MILLISECONDS);
                 int          code       = upstreamResponse.getStatus();
                 LOG.debug("Client result is {}, time is {}ms", code, System.currentTimeMillis() - startupTime);
                 if(code == 200) {
@@ -81,11 +89,12 @@ public class PipelineServlet extends HttpServlet {
                     if(upstreamResponse.getResponseBody() == null) {
                         LOG.warn("No response content from upstream");
                     } else {
-                        String body = new String(upstreamResponse.getResponseBody());
+                        String body = new String(upstreamResponse.getResponseBody(), StandardCharsets.UTF_8);
                         LOG.debug("Sending error body {}", body);
                         aResponse.getWriter().write(body);
                     }
 
+                    saveError(httpRequest, upstreamResponse);
                 }
 
 
@@ -111,6 +120,26 @@ public class PipelineServlet extends HttpServlet {
             currentThread.setName(oldThreadName);
         }
 
+    }
+
+    private String generateExecutorKey(HttpServletRequest aRequest) {
+        return aRequest.getRequestURI() + "/" + aRequest.getQueryString();
+    }
+
+    private void saveError(HttpRequest aRequest, HttpResponse aResponse) {
+        try {
+            try (PrintWriter out = new PrintWriter(new FileWriter(new File(errorDir, System.currentTimeMillis() + ".txt")))) {
+                out.println(aRequest.getUrl());
+                out.println("Request:");
+                out.println(new String(aRequest.getBody(), StandardCharsets.UTF_8));
+                out.println("Response:");
+                out.println(aResponse.getStatus());
+                out.println(aResponse.getErrorMessage());
+                out.println(new String(aResponse.getResponseBody(), StandardCharsets.UTF_8));
+            }
+        } catch (Exception e) {
+            LOG.error("Cannot save log", e);
+        }
     }
 
     private String createUpstreamUrl(String aBaseUrl, String aRequestUri, String aQuery) {

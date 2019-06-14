@@ -2,6 +2,8 @@ package com.payneteasy.http.pipeline;
 
 import com.payneteasy.startup.parameters.AStartupParameter;
 
+import java.io.File;
+
 public interface IStartupConfig {
 
     @AStartupParameter(name = "WEB_SERVER_PORT", value = "8083")
@@ -57,6 +59,9 @@ public interface IStartupConfig {
     @AStartupParameter(name = "JETTY_POOL_IDLE_TIMEOUT_MS", value = "60000")
     int getJettyIdleTimeoutMs();
 
-    @AStartupParameter(name = "UPSTREAM_REQUESTS_BUCKETS", value = "0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120")
+    @AStartupParameter(name = "UPSTREAM_REQUESTS_BUCKETS", value = "0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 140, 180, 240, 300, 400, 600, 700, 800")
     String getUpstreamRequestsBuckets();
+
+    @AStartupParameter(name = "ERROR_DIR", value = "/var/log/pipeline/errors")
+    File getErrorDir();
 }

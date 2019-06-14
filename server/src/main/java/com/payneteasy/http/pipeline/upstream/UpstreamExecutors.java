@@ -34,10 +34,18 @@ public class UpstreamExecutors {
     }
 
     public ExecutorService findExecutor(String aKey) {
-        int hash = aKey.hashCode();
-        int index = Math.abs(hash % activeExecutors);
-        LOG.debug("Found executor at index {} (hash={}, active={})", index, hash, activeExecutors);
-        return executors[index];
+        if(aKey.startsWith("/api/v2/app/log")) {
+            LOG.debug("Returned dedicated (0) executor for log");
+            return executors[0];
+        } else {
+            final int hash = aKey.hashCode();
+            final int mod  = activeExecutors - 1;
+            final int index = Math.abs(hash % mod) + 1;
+
+            LOG.debug("Found executor at index {} (hash={}, active={}, mod={})", index, hash, activeExecutors, mod);
+
+            return executors[index];
+        }
     }
 
     public List<BlockingQueue> getQueues() {

@@ -150,12 +150,14 @@
                         <jvmFlags>
                             <jmxFlag>-server</jmxFlag>
                             <jmxFlag>-Djava.awt.headless=true</jmxFlag>
-                            <jmxFlag>-XX:+UnlockExperimentalVMOptions</jmxFlag>
-                            <jmxFlag>-XX:+UseCGroupMemoryLimitForHeap</jmxFlag>
-                            <jmxFlag>-XX:InitialRAMFraction=2</jmxFlag>
-                            <jmxFlag>-XX:MinRAMFraction=2</jmxFlag>
-                            <jmxFlag>-XX:MaxRAMFraction=2</jmxFlag>
-                            <jmxFlag>-XX:+UseG1GC</jmxFlag>
+                            <!--<jmxFlag>-XX:+UnlockExperimentalVMOptions</jmxFlag>-->
+                            <!--<jmxFlag>-XX:+UseCGroupMemoryLimitForHeap</jmxFlag>-->
+                            <!--<jmxFlag>-XX:InitialRAMFraction=2</jmxFlag>-->
+                            <!--<jmxFlag>-XX:MinRAMFraction=2</jmxFlag>-->
+                            <!--<jmxFlag>-XX:MaxRAMFraction=2</jmxFlag>-->
+                            <!--<jmxFlag>-XX:+UseG1GC</jmxFlag>-->
+                            <jmxFlag>-Xmx2G</jmxFlag>
+                            <jmxFlag>-Xms2G</jmxFlag>
                         </jvmFlags>
                         <mainClass>com.payneteasy.http.pipeline.HttpPipelineApplication</mainClass>
                         <ports>
