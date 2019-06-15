@@ -11,7 +11,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Map;
 
-public class HttpClient {
+public class HttpClient implements IHttpClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(HttpClient.class);
 

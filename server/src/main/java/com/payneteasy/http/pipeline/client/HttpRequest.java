@@ -1,5 +1,7 @@
 package com.payneteasy.http.pipeline.client;
 
+import com.payneteasy.http.pipeline.cache.CacheKey;
+
 import java.util.Map;
 
 public class HttpRequest {
@@ -9,13 +11,15 @@ public class HttpRequest {
     private final     byte[]              body;
     private final     int                 connectionTimeout;
     private final     int                 readTimeout;
+    private final CacheKey                cacheKey;
 
-    public HttpRequest(String url, Map<String, String> headers, byte[] body, int connectionTimeout, int readTimeout) {
+    public HttpRequest(String url, Map<String, String> headers, byte[] body, int connectionTimeout, int readTimeout, CacheKey aCacheKey) {
         this.url = url;
         this.headers = headers;
         this.body = body;
         this.connectionTimeout = connectionTimeout;
         this.readTimeout = readTimeout;
+        cacheKey = aCacheKey;
     }
 
     public String getUrl() {
@@ -36,5 +40,9 @@ public class HttpRequest {
 
     public int getReadTimeout() {
         return readTimeout;
+    }
+
+    public CacheKey getCacheKey() {
+        return cacheKey;
     }
 }

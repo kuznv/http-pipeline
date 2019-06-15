@@ -64,4 +64,15 @@ public interface IStartupConfig {
 
     @AStartupParameter(name = "ERROR_DIR", value = "/var/log/pipeline/errors")
     File getErrorDir();
+
+    @AStartupParameter(name = "CACHE_MEMORY_MAX_SIZE", value = "10240")
+    int getCacheMemoryMaximumSize();
+
+    @AStartupParameter(name = "CACHE_MEMORY_TTL_MS", value = "800000")
+    int getCacheMemoryTtlMs();
+
+    @AStartupParameter(name = "CACHE_RESPONSE_MAX_BODY", value = "10240")
+    int getCacheMaximumBody();
+
+
 }

@@ -1,10 +1,14 @@
 package com.payneteasy.http.pipeline.servlet;
 
+import com.payneteasy.http.pipeline.cache.CacheKey;
+import com.payneteasy.http.pipeline.cache.ICacheKeyFactory;
+import com.payneteasy.http.pipeline.cache.ICacheManager;
 import com.payneteasy.http.pipeline.client.HttpRequest;
 import com.payneteasy.http.pipeline.client.HttpResponse;
+import com.payneteasy.http.pipeline.client.IHttpClient;
 import com.payneteasy.http.pipeline.log.HttpBodyLog;
-import com.payneteasy.http.pipeline.upstream.UpstreamTask;
 import com.payneteasy.http.pipeline.upstream.UpstreamExecutors;
+import com.payneteasy.http.pipeline.upstream.UpstreamTask;
 import com.payneteasy.http.pipeline.util.InputStreams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +43,9 @@ public class PipelineServlet extends HttpServlet {
     private final File              errorDir;
     private final AtomicBoolean     writeHttpBody;
     private final HttpBodyLog       httpBodyLog;
+    private final ICacheManager     cacheManager;
+    private final ICacheKeyFactory  cacheKeyFactory;
+    private final IHttpClient       httpClient;
 
     public PipelineServlet(String upstreamBaseUrl
             , UpstreamExecutors aExecutors
@@ -47,6 +54,9 @@ public class PipelineServlet extends HttpServlet {
             , AtomicInteger aWaitingMs
             , File aErrorDir
             , AtomicBoolean aWriteHttpBody
+            , ICacheKeyFactory aCacheKeyFactory
+            , ICacheManager    aCacheManager
+            , IHttpClient      aHttpClient
     ) {
         this.upstreamBaseUrl = upstreamBaseUrl;
         executors = aExecutors;
@@ -56,31 +66,30 @@ public class PipelineServlet extends HttpServlet {
         errorDir = aErrorDir;
         writeHttpBody = aWriteHttpBody;
         httpBodyLog = new HttpBodyLog(aErrorDir);
+        cacheManager = aCacheManager;
+        cacheKeyFactory = aCacheKeyFactory;
+        httpClient = aHttpClient;
     }
 
     @Override
     protected void doPost(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
         LOG.debug("Received {}?{}", aRequest.getRequestURI(), aRequest.getQueryString());
 
-        String id = aRequest.getRemoteAddr() + "-" + aRequest.getRequestURI() + "?" + aRequest.getQueryString() + "-" + serial.incrementAndGet();
+        String threadId = aRequest.getRemoteAddr() + "-" + aRequest.getRequestURI() + "?" + aRequest.getQueryString() + "-" + serial.incrementAndGet();
         Thread currentThread = Thread.currentThread();
         String oldThreadName = currentThread.getName();
-        currentThread.setName("jetty-" + id);
+        currentThread.setName("jetty-" + threadId);
 
         try {
-            String              query       = aRequest.getQueryString();
-            Map<String, String> headers     = extractHeaders(aRequest);
-            String              upstreamUrl = createUpstreamUrl(upstreamBaseUrl, aRequest.getRequestURI(), query);
+            HttpRequest httpRequest = createHttpRequest(aRequest);
 
-            HttpRequest httpRequest = new HttpRequest(upstreamUrl
-                    , headers
-                    , InputStreams.readFully(aRequest.getInputStream(), aRequest.getContentLength())
-                    , connectionTimeoutMs
-                    , readTimeoutMs);
+            if (findInCache(aResponse, httpRequest)) {
+                return;
+            }
 
-            LOG.debug("Queuing {} ...", upstreamUrl);
+            LOG.debug("Queuing {} ...", httpRequest.getUrl());
             ExecutorService      executor           = executors.findExecutor(generateExecutorKey(aRequest));
-            Future<HttpResponse> httpResponseFuture = executor.submit(new UpstreamTask("upstr-" + id, httpRequest));
+            Future<HttpResponse> httpResponseFuture = executor.submit(new UpstreamTask("upstr-" + threadId, httpRequest, httpClient));
 
             try {
                 long startupTime = System.currentTimeMillis();
@@ -89,27 +98,10 @@ public class PipelineServlet extends HttpServlet {
                 int          code       = upstreamResponse.getStatus();
                 LOG.debug("Client result is {}, time is {}ms", code, System.currentTimeMillis() - startupTime);
                 if(code == 200) {
-                    aResponse.setStatus(code);
-                    aResponse.getOutputStream().write(upstreamResponse.getResponseBody());
-                    if(writeHttpBody.get()) {
-                        String path = (aRequest.getRequestURI() + "-"+aRequest.getQueryString())
-                                .replace('=', '-')
-                                .replace('/', '-');
-                        httpBodyLog.log(path, httpRequest.getBody(), upstreamResponse.getResponseBody());
-                    }
+                    writeSuccess(aRequest, aResponse, httpRequest, upstreamResponse, code);
                 } else {
-                    aResponse.setStatus(code);
-                    if(upstreamResponse.getResponseBody() == null) {
-                        LOG.warn("No response content from upstream");
-                    } else {
-                        String body = new String(upstreamResponse.getResponseBody(), StandardCharsets.UTF_8);
-                        LOG.debug("Sending error body {}", body);
-                        aResponse.getWriter().write(body);
-                    }
-
-                    saveError(httpRequest, upstreamResponse);
+                    writeError(aResponse, httpRequest, upstreamResponse, code);
                 }
-
 
             } catch (InterruptedException e) {
 
@@ -133,6 +125,70 @@ public class PipelineServlet extends HttpServlet {
             currentThread.setName(oldThreadName);
         }
 
+    }
+
+    private boolean findInCache(HttpServletResponse aResponse, HttpRequest httpRequest) throws IOException {
+        if(httpRequest.getCacheKey().hasError()) {
+            return false;
+        }
+
+        HttpResponse cachedHttpResponse = cacheManager.getResponse(httpRequest.getCacheKey());
+        if(cachedHttpResponse == null) {
+            return false;
+        }
+
+        LOG.debug("Got response from the cache");
+        writeResponse(aResponse, cachedHttpResponse);
+        return true;
+    }
+
+    private HttpRequest createHttpRequest(HttpServletRequest aRequest) throws IOException {
+        String              query       = aRequest.getQueryString();
+        Map<String, String> headers     = extractHeaders(aRequest);
+        String              upstreamUrl = createUpstreamUrl(upstreamBaseUrl, aRequest.getRequestURI(), query);
+        byte[]              body        = InputStreams.readFully(aRequest.getInputStream(), aRequest.getContentLength());
+        CacheKey            cacheKey    = cacheKeyFactory.createKey(aRequest.getRequestURI(), aRequest.getQueryString(), body);
+
+        return new HttpRequest(upstreamUrl
+                , headers
+                , body
+                , connectionTimeoutMs
+                , readTimeoutMs
+                , cacheKey
+        );
+    }
+
+    private void writeSuccess(HttpServletRequest aRequest, HttpServletResponse aResponse, HttpRequest httpRequest, HttpResponse upstreamResponse, int code) throws IOException {
+        aResponse.setStatus(code);
+        aResponse.getOutputStream().write(upstreamResponse.getResponseBody());
+        logRequestResponse(aRequest, httpRequest, upstreamResponse);
+    }
+
+    private void writeError(HttpServletResponse aResponse, HttpRequest httpRequest, HttpResponse upstreamResponse, int code) throws IOException {
+        aResponse.setStatus(code);
+        if(upstreamResponse.getResponseBody() == null) {
+            LOG.warn("No response content from upstream");
+        } else {
+            String body = new String(upstreamResponse.getResponseBody(), StandardCharsets.UTF_8);
+            LOG.debug("Sending error body {}", body);
+            aResponse.getWriter().write(body);
+        }
+
+        saveError(httpRequest, upstreamResponse);
+    }
+
+    private void writeResponse(HttpServletResponse aResponse, HttpResponse aHttpResponse) throws IOException {
+        aResponse.setStatus(aHttpResponse.getStatus());
+        aResponse.getOutputStream().write(aHttpResponse.getResponseBody());
+    }
+
+    private void logRequestResponse(HttpServletRequest aRequest, HttpRequest httpRequest, HttpResponse upstreamResponse) {
+        if(writeHttpBody.get()) {
+            String path = (aRequest.getRequestURI() + "-"+aRequest.getQueryString())
+                    .replace('=', '-')
+                    .replace('/', '-');
+            httpBodyLog.log(path, httpRequest.getBody(), upstreamResponse.getResponseBody());
+        }
     }
 
     private String generateExecutorKey(HttpServletRequest aRequest) {

@@ -1,5 +1,12 @@
 package com.payneteasy.http.pipeline;
 
+import com.payneteasy.http.pipeline.cache.CacheManagerMemory;
+import com.payneteasy.http.pipeline.cache.ICacheKeyFactory;
+import com.payneteasy.http.pipeline.cache.ICacheManager;
+import com.payneteasy.http.pipeline.cache.PathQueryBodyKeyFactory;
+import com.payneteasy.http.pipeline.client.HttpClient;
+import com.payneteasy.http.pipeline.client.HttpClientWithCache;
+import com.payneteasy.http.pipeline.client.IHttpClient;
 import com.payneteasy.http.pipeline.metrics.ThreadPoolExecutorCollector;
 import com.payneteasy.http.pipeline.servlet.ChangeQueueTimeoutServlet;
 import com.payneteasy.http.pipeline.servlet.ChangeWriteHttpBodyServlet;
@@ -120,6 +127,10 @@ public class HttpPipelineApplication {
 
         registerJettyMetrics(jetty);
 
+        ICacheKeyFactory cacheKeyFactory = new PathQueryBodyKeyFactory();
+        ICacheManager    cacheManager    = new CacheManagerMemory(aConfig.getCacheMemoryMaximumSize(), aConfig.getCacheMemoryTtlMs());
+        IHttpClient      httpClient      = new HttpClientWithCache(new HttpClient(), cacheManager, aConfig.getCacheMaximumBody());
+
         PipelineServlet pipelineServlet = new PipelineServlet(
                 aConfig.getUpstreamBaseUrl()
                 , executors
@@ -128,6 +139,9 @@ public class HttpPipelineApplication {
                 , aQeueuWaitTimeoutMs
                 , aConfig.getErrorDir()
                 , enableHttpBodyLog
+                , cacheKeyFactory
+                , cacheManager
+                , httpClient
         );
 
         MetricsFilter filter = new MetricsFilter("requests"
