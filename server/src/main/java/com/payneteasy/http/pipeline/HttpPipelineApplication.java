@@ -2,6 +2,7 @@ package com.payneteasy.http.pipeline;
 
 import com.payneteasy.http.pipeline.metrics.ThreadPoolExecutorCollector;
 import com.payneteasy.http.pipeline.servlet.ChangeQueueTimeoutServlet;
+import com.payneteasy.http.pipeline.servlet.ChangeWriteHttpBodyServlet;
 import com.payneteasy.http.pipeline.servlet.PipelineServlet;
 import com.payneteasy.http.pipeline.servlet.VersionServlet;
 import com.payneteasy.http.pipeline.upstream.UpstreamExecutor;
@@ -29,6 +30,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.EnumSet;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class HttpPipelineApplication {
@@ -42,18 +44,21 @@ public class HttpPipelineApplication {
             IStartupConfig startupConfig = StartupParametersFactory.getStartupParameters(IStartupConfig.class);
 
             AtomicInteger queueWaitTimeoutMs = new AtomicInteger(startupConfig.getUpstreamWaitTimeoutMs());
+            AtomicBoolean enableHttpBodyLog = new AtomicBoolean(false);
+
+
             UpstreamExecutors executors = new UpstreamExecutors(startupConfig.getUpstreamMaxConnections(), startupConfig.getUpstreamQueueSize(), startupConfig.getUpstreamActiveConnections());
             registerExecutorsMetrics(executors);
             Runtime.getRuntime().addShutdownHook(new Thread(executors::stop));
 
             {
-                Server jetty = createJettyServer(startupConfig, executors, queueWaitTimeoutMs);
+                Server jetty = createJettyServer(startupConfig, executors, queueWaitTimeoutMs, enableHttpBodyLog);
                 jetty.start();
                 jetty.setStopAtShutdown(true);
             }
 
             {
-                Server managementServer = createManagementServer(startupConfig, executors, queueWaitTimeoutMs);
+                Server managementServer = createManagementServer(startupConfig, executors, queueWaitTimeoutMs, enableHttpBodyLog);
                 managementServer.start();
                 managementServer.setStopAtShutdown(true);
             }
@@ -65,7 +70,7 @@ public class HttpPipelineApplication {
         }
     }
 
-    private static Server createManagementServer(IStartupConfig aStartupConfig, UpstreamExecutors executors, AtomicInteger aQueueWaitTimeout) {
+    private static Server createManagementServer(IStartupConfig aStartupConfig, UpstreamExecutors executors, AtomicInteger aQueueWaitTimeout, AtomicBoolean enableHttpBodyLog) {
         Server                jetty   = new Server(aStartupConfig.managementServerPort());
         ServletContextHandler context = new ServletContextHandler(jetty, aStartupConfig.managementServerContext(), ServletContextHandler.SESSIONS);
 
@@ -87,12 +92,13 @@ public class HttpPipelineApplication {
         }), "/active-executors/*");
 
         context.addServlet(new ServletHolder(new ChangeQueueTimeoutServlet(aQueueWaitTimeout)), "/queue-wait-timeout/*");
+        context.addServlet(new ServletHolder(new ChangeWriteHttpBodyServlet(enableHttpBodyLog)), "/write-http-body/*");
 
 
         return jetty;
     }
 
-    private static Server createJettyServer(IStartupConfig aConfig, UpstreamExecutors executors, AtomicInteger aQeueuWaitTimeoutMs) {
+    private static Server createJettyServer(IStartupConfig aConfig, UpstreamExecutors executors, AtomicInteger aQeueuWaitTimeoutMs, AtomicBoolean enableHttpBodyLog) {
         QueuedThreadPool threadPool = new QueuedThreadPool(
                   aConfig.getJettyMaxThreads()
                 , aConfig.getJettyMinThreads()
@@ -121,6 +127,7 @@ public class HttpPipelineApplication {
                 , aConfig.getUpstreamReadTimeoutMs()
                 , aQeueuWaitTimeoutMs
                 , aConfig.getErrorDir()
+                , enableHttpBodyLog
         );
 
         MetricsFilter filter = new MetricsFilter("requests"

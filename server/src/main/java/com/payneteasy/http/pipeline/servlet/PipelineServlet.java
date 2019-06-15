@@ -2,6 +2,7 @@ package com.payneteasy.http.pipeline.servlet;
 
 import com.payneteasy.http.pipeline.client.HttpRequest;
 import com.payneteasy.http.pipeline.client.HttpResponse;
+import com.payneteasy.http.pipeline.log.HttpBodyLog;
 import com.payneteasy.http.pipeline.upstream.UpstreamTask;
 import com.payneteasy.http.pipeline.upstream.UpstreamExecutors;
 import com.payneteasy.http.pipeline.util.InputStreams;
@@ -21,6 +22,7 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -35,6 +37,8 @@ public class PipelineServlet extends HttpServlet {
     private final int               readTimeoutMs;
     private final AtomicInteger     waitingMs;
     private final File              errorDir;
+    private final AtomicBoolean     writeHttpBody;
+    private final HttpBodyLog       httpBodyLog;
 
     public PipelineServlet(String upstreamBaseUrl
             , UpstreamExecutors aExecutors
@@ -42,6 +46,7 @@ public class PipelineServlet extends HttpServlet {
             , int aReadTimeoutMs
             , AtomicInteger aWaitingMs
             , File aErrorDir
+            , AtomicBoolean aWriteHttpBody
     ) {
         this.upstreamBaseUrl = upstreamBaseUrl;
         executors = aExecutors;
@@ -49,6 +54,8 @@ public class PipelineServlet extends HttpServlet {
         connectionTimeoutMs = aConnectionTimeoutMs;
         waitingMs = aWaitingMs;
         errorDir = aErrorDir;
+        writeHttpBody = aWriteHttpBody;
+        httpBodyLog = new HttpBodyLog(aErrorDir);
     }
 
     @Override
@@ -84,6 +91,12 @@ public class PipelineServlet extends HttpServlet {
                 if(code == 200) {
                     aResponse.setStatus(code);
                     aResponse.getOutputStream().write(upstreamResponse.getResponseBody());
+                    if(writeHttpBody.get()) {
+                        String path = (aRequest.getRequestURI() + "-"+aRequest.getQueryString())
+                                .replace('=', '-')
+                                .replace('/', '-');
+                        httpBodyLog.log(path, httpRequest.getBody(), upstreamResponse.getResponseBody());
+                    }
                 } else {
                     aResponse.setStatus(code);
                     if(upstreamResponse.getResponseBody() == null) {
