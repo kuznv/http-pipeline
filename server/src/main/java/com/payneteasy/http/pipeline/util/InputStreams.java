@@ -1,5 +1,6 @@
 package com.payneteasy.http.pipeline.util;
 
+import com.google.common.io.ByteStreams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,13 +32,7 @@ public class InputStreams {
 
 
     public static byte[] readAll(InputStream aInputStream) throws IOException {
-        byte[] buffer = new byte[8 * 1024];
-        int    count  = aInputStream.read(buffer);
-        LOG.debug("Read {}", count);
-        
-        byte[] ret = new byte[count];
-        System.arraycopy(buffer, 0, ret, 0, count);
-        return ret;
+        return ByteStreams.toByteArray(aInputStream);
     }
 
 

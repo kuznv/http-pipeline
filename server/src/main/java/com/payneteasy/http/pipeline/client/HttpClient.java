@@ -48,7 +48,7 @@ public class HttpClient implements IHttpClient {
             int         responseCode = connection.getResponseCode();
             
             LOG.debug("Response code is {} and content length is {}", responseCode, connection.getContentLength());
-            byte[]      body        = InputStreams.readFully(inputStream, connection.getContentLength());
+            byte[]      body        = InputStreams.readAll(inputStream);
 
             return new HttpResponse(responseCode, body, null);
         } catch (FileNotFoundException e) {

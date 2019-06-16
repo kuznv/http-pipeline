@@ -31,6 +31,7 @@ public class HttpBodyLog {
         try {
             String id = "http-" + System.currentTimeMillis() + "-" + index.incrementAndGet() + "-" + aPath;
             writeJson(aRequestBody, new File(dir, id + "-in.json"));
+            writeRaw(aResponseBody, new File(dir, id + "-out-raw.json"));
             writeJson(aResponseBody, new File(dir, id + "-out.json"));
         } catch (IOException e) {
             LOG.error("Cannot write json", e);
@@ -43,7 +44,13 @@ public class HttpBodyLog {
         }
     }
 
-    private String formatJson(byte[] aBody) {
+    private void writeRaw(byte[] aBody, File aFile) throws IOException {
+        try(FileOutputStream out = new FileOutputStream(aFile)) {
+            out.write(aBody);
+        }
+    }
+
+    protected String formatJson(byte[] aBody) {
         JsonElement jsonElement = parser.parse(new String(aBody, StandardCharsets.UTF_8));
         return gson.toJson(jsonElement);
     }
