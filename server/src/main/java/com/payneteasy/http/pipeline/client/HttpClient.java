@@ -21,7 +21,7 @@ public class HttpClient implements IHttpClient {
         connection.setConnectTimeout(aRequest.getConnectionTimeout());
         connection.setReadTimeout(aRequest.getReadTimeout());
 
-//        LOG.debug("Connecting to {} ...", aRequest.getUrl());
+//        LOG.debug("Connecting to {} ...", aRequest.getFullPath());
 //        connection.connect();
 
         for (Map.Entry<String, String> entry : aRequest.getHeaders().entrySet()) {

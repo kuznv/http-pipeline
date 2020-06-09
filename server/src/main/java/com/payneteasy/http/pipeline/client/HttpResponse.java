@@ -1,5 +1,8 @@
 package com.payneteasy.http.pipeline.client;
 
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
+
 public class HttpResponse {
 
     private final int status;
@@ -26,5 +29,11 @@ public class HttpResponse {
 
     public byte[] getResponseBody() {
         return responseBody;
+    }
+
+    public void dump(PrintWriter out) {
+        out.println("Status: " + status);
+        out.println("Error: " + errorMessage);
+        out.write(new String(responseBody, StandardCharsets.UTF_8));
     }
 }

@@ -72,8 +72,14 @@ public class PipelineServlet extends HttpServlet {
     }
 
     @Override
-    protected void doPost(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
+    protected void doPut(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
         LOG.debug("Received {}?{}", aRequest.getRequestURI(), aRequest.getQueryString());
+
+        Enumeration<String> parameterNames = aRequest.getParameterNames();
+        while (parameterNames.hasMoreElements()) {
+            String param = parameterNames.nextElement();
+            System.out.println("param = " + param +  " = " + aRequest.getParameter(param));
+        }
 
         String threadId = aRequest.getRemoteAddr() + "-" + aRequest.getRequestURI() + "?" + aRequest.getQueryString() + "-" + serial.incrementAndGet();
         Thread currentThread = Thread.currentThread();
@@ -82,6 +88,7 @@ public class PipelineServlet extends HttpServlet {
 
         try {
             HttpRequest httpRequest = createHttpRequest(aRequest);
+            System.out.println("httpRequest = " + httpRequest.getHeaders() + " " + new String(httpRequest.getBody()));
 
             if (findInCache(aResponse, httpRequest)) {
                 return;

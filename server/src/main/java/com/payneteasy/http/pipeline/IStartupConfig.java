@@ -42,6 +42,9 @@ public interface IStartupConfig {
     @AStartupParameter(name = "PIPELINE_SERVLET_PATH", value = "/*")
     String getPipelineServletPath();
 
+    @AStartupParameter(name = "PROXY_SERVLET_PATH", value = "/proxy/*")
+    String getProxyServletPath();
+
     @AStartupParameter(name = "MANAGEMENT_METRICS_PATH", value = "/metrics")
     String getMetricsServletPath();
 
@@ -74,5 +77,10 @@ public interface IStartupConfig {
     @AStartupParameter(name = "CACHE_RESPONSE_MAX_BODY", value = "10240")
     int getCacheMaximumBody();
 
+    @AStartupParameter(name = "PROXY_LOG_DIR", value = "proxy-logs")
+    File getProxyLogDir();
 
+
+    @AStartupParameter(name = "PROXY_UPSTREAM_HEADERS", value = "Content-Type")
+    String getProxyUpstreamHeaders();
 }

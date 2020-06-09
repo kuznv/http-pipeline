@@ -8,6 +8,7 @@ import com.payneteasy.http.pipeline.client.HttpClient;
 import com.payneteasy.http.pipeline.client.HttpClientWithCache;
 import com.payneteasy.http.pipeline.client.IHttpClient;
 import com.payneteasy.http.pipeline.metrics.ThreadPoolExecutorCollector;
+import com.payneteasy.http.pipeline.proxy.ProxyServlet;
 import com.payneteasy.http.pipeline.servlet.ChangeQueueTimeoutServlet;
 import com.payneteasy.http.pipeline.servlet.ChangeWriteHttpBodyServlet;
 import com.payneteasy.http.pipeline.servlet.PipelineServlet;
@@ -36,7 +37,10 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
+import java.util.StringTokenizer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -149,9 +153,22 @@ public class HttpPipelineApplication {
                 , -1
                 , getUpstreamRequestsBuckets(aConfig.getUpstreamRequestsBuckets())
         );
+
+        ProxyServlet proxyServlet = new ProxyServlet(aConfig.getProxyLogDir(), aConfig.getUpstreamBaseUrl(), toList(aConfig.getProxyUpstreamHeaders()));
+
         context.addFilter(new FilterHolder(filter), "/*", EnumSet.of(DispatcherType.REQUEST));
         context.addServlet(new ServletHolder(pipelineServlet), aConfig.getPipelineServletPath());
+        context.addServlet(new ServletHolder(proxyServlet)    , aConfig.getProxyServletPath());
         return jetty;
+    }
+
+    private static List<String> toList(String aLine) {
+        List<String> ret = new ArrayList<>();
+        StringTokenizer st = new StringTokenizer(aLine, " \t,;");
+        while(st.hasMoreTokens()) {
+            ret.add(st.nextToken());
+        }
+        return ret;
     }
 
     private static double[] getUpstreamRequestsBuckets(String aText) {
