@@ -7,8 +7,8 @@ import com.payneteasy.http.pipeline.client.HttpRequest;
 import com.payneteasy.http.pipeline.client.HttpResponse;
 import com.payneteasy.http.pipeline.client.IHttpClient;
 import com.payneteasy.http.pipeline.log.HttpBodyLog;
-import com.payneteasy.http.pipeline.upstream.UpstreamExecutors;
 import com.payneteasy.http.pipeline.upstream.UpstreamTask;
+import com.payneteasy.http.pipeline.upstream.UpstreamExecutor;
 import com.payneteasy.http.pipeline.util.InputStreams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +22,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
@@ -36,7 +37,8 @@ public class PipelineServlet extends HttpServlet {
 
     private final AtomicLong        serial = new AtomicLong();
     private final String            upstreamBaseUrl;
-    private final UpstreamExecutors executors;
+    private final UpstreamExecutor  upstreamExecutor;
+    private final ExecutorService   logExecutor;
     private final int               connectionTimeoutMs;
     private final int               readTimeoutMs;
     private final AtomicInteger     waitingMs;
@@ -48,18 +50,20 @@ public class PipelineServlet extends HttpServlet {
     private final IHttpClient       httpClient;
 
     public PipelineServlet(String upstreamBaseUrl
-            , UpstreamExecutors aExecutors
+            , UpstreamExecutor aExecutor
+            , ExecutorService aLogExecutor
             , int aConnectionTimeoutMs
             , int aReadTimeoutMs
             , AtomicInteger aWaitingMs
             , File aErrorDir
             , AtomicBoolean aWriteHttpBody
             , ICacheKeyFactory aCacheKeyFactory
-            , ICacheManager    aCacheManager
-            , IHttpClient      aHttpClient
+            , ICacheManager aCacheManager
+            , IHttpClient aHttpClient
     ) {
         this.upstreamBaseUrl = upstreamBaseUrl;
-        executors = aExecutors;
+        upstreamExecutor = aExecutor;
+        logExecutor = aLogExecutor;
         readTimeoutMs = aReadTimeoutMs;
         connectionTimeoutMs = aConnectionTimeoutMs;
         waitingMs = aWaitingMs;
@@ -74,6 +78,18 @@ public class PipelineServlet extends HttpServlet {
     @Override
     protected void doPut(HttpServletRequest aRequest, HttpServletResponse aResponse) throws ServletException, IOException {
         LOG.debug("Received {}?{}", aRequest.getRequestURI(), aRequest.getQueryString());
+
+        String login;
+        try {
+            login = checkOAuthAndReturnLogin(aRequest);
+        } catch (NotAuthorizedException e) {
+            aResponse.sendError(HttpServletResponse.SC_FORBIDDEN);
+            return;
+        } catch (GeneralSecurityException e) {
+            LOG.error(e.getMessage(), e);
+            aResponse.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+            return;
+        }
 
         Enumeration<String> parameterNames = aRequest.getParameterNames();
         while (parameterNames.hasMoreElements()) {
@@ -95,8 +111,16 @@ public class PipelineServlet extends HttpServlet {
             }
 
             LOG.debug("Queuing {} ...", httpRequest.getUrl());
-            ExecutorService      executor           = executors.findExecutor(generateExecutorKey(aRequest));
-            Future<HttpResponse> httpResponseFuture = executor.submit(new UpstreamTask("upstr-" + threadId, httpRequest, httpClient));
+
+            UpstreamTask upstreamTask = new UpstreamTask("upstr-" + threadId, httpRequest, httpClient, login);
+
+            Future<HttpResponse> httpResponseFuture;
+            if (aRequest.getRequestURI().startsWith("/api/v2/app/log")) {
+                LOG.debug("Returned dedicated (0) executor for log");
+                httpResponseFuture = logExecutor.submit(upstreamTask);
+            } else {
+                httpResponseFuture = upstreamExecutor.submit(upstreamTask);
+            }
 
             try {
                 long startupTime = System.currentTimeMillis();
@@ -198,10 +222,6 @@ public class PipelineServlet extends HttpServlet {
         }
     }
 
-    private String generateExecutorKey(HttpServletRequest aRequest) {
-        return aRequest.getRequestURI() + "/" + aRequest.getQueryString();
-    }
-
     private void saveError(HttpRequest aRequest, HttpResponse aResponse) {
         try {
             try (PrintWriter out = new PrintWriter(new FileWriter(new File(errorDir, System.currentTimeMillis() + ".txt")))) {
@@ -230,5 +250,21 @@ public class PipelineServlet extends HttpServlet {
             headers.put(name, aRequest.getHeader(name));
         }
         return headers;
+    }
+
+    private String checkOAuthAndReturnLogin(HttpServletRequest request) throws NotAuthorizedException, GeneralSecurityException {
+        String authorizationHeader = request.getHeader("Authorization");
+        if (authorizationHeader == null) {
+            throw new NotAuthorizedException("You must supply an OAuth authorization via Authorization header");
+        }
+        OAuthAuthorization auth = OAuthParser.decodeAuthorization(authorizationHeader);
+
+        return auth.getConsumerKey();
+    }
+
+    private static class NotAuthorizedException extends Exception {
+        public NotAuthorizedException(String message) {
+            super(message);
+        }
     }
 }

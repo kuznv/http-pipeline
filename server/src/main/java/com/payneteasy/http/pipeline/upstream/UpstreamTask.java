@@ -11,12 +11,13 @@ public class UpstreamTask implements Callable<HttpResponse> {
     private final HttpRequest request;
     private final String      id;
     private final IHttpClient httpClient;
+    private final String      user;
 
-    public UpstreamTask(String id, HttpRequest httpRequest, IHttpClient aHttpClient) {
+    public UpstreamTask(String id, HttpRequest httpRequest, IHttpClient aHttpClient, String user) {
         this.request = httpRequest;
         this.id = id;
         httpClient = aHttpClient;
-
+        this.user = user;
     }
 
     @Override
@@ -27,5 +28,9 @@ public class UpstreamTask implements Callable<HttpResponse> {
 
     public HttpRequest getHttpRequest() {
         return request;
+    }
+
+    public String getUser() {
+        return user;
     }
 }

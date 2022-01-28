@@ -36,7 +36,11 @@ public class HttpClient implements IHttpClient {
             LOG.debug("Connecting to {}", aRequest.getUrl());
             connection.connect();
         } catch (IOException e) {
-            return new HttpResponse(502, InputStreams.readAll(connection.getErrorStream()), "Upstream unavailable: " + e.getMessage());
+            if (connection.getErrorStream() != null) {
+                return new HttpResponse(502, InputStreams.readAll(connection.getErrorStream()), "Upstream unavailable: " + e.getMessage());
+            } else {
+                return new HttpResponse(502, null, "Upstream unavailable: " + e.getMessage());
+            }
         }
 
         LOG.debug("Writing to {}", aRequest.getUrl());

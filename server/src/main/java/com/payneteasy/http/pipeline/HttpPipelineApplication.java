@@ -8,13 +8,13 @@ import com.payneteasy.http.pipeline.client.HttpClient;
 import com.payneteasy.http.pipeline.client.HttpClientWithCache;
 import com.payneteasy.http.pipeline.client.IHttpClient;
 import com.payneteasy.http.pipeline.metrics.ThreadPoolExecutorCollector;
+import com.payneteasy.http.pipeline.metrics.UpstreamExecutorsCollector;
 import com.payneteasy.http.pipeline.proxy.ProxyServlet;
 import com.payneteasy.http.pipeline.servlet.ChangeQueueTimeoutServlet;
 import com.payneteasy.http.pipeline.servlet.ChangeWriteHttpBodyServlet;
 import com.payneteasy.http.pipeline.servlet.PipelineServlet;
 import com.payneteasy.http.pipeline.servlet.VersionServlet;
 import com.payneteasy.http.pipeline.upstream.UpstreamExecutor;
-import com.payneteasy.http.pipeline.upstream.UpstreamExecutors;
 import com.payneteasy.startup.parameters.StartupParametersFactory;
 import io.prometheus.client.exporter.MetricsServlet;
 import io.prometheus.client.filter.MetricsFilter;
@@ -41,6 +41,9 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.StringTokenizer;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -58,18 +61,21 @@ public class HttpPipelineApplication {
             AtomicBoolean enableHttpBodyLog = new AtomicBoolean(false);
 
 
-            UpstreamExecutors executors = new UpstreamExecutors(startupConfig.getUpstreamMaxConnections(), startupConfig.getUpstreamQueueSize(), startupConfig.getUpstreamActiveConnections());
-            registerExecutorsMetrics(executors);
-            Runtime.getRuntime().addShutdownHook(new Thread(executors::stop));
+            UpstreamExecutor executor = new UpstreamExecutor(
+                    startupConfig.getUpstreamActiveConnectionsPerUser(),
+                    startupConfig.getUpstreamActiveConnections()
+            );
+            registerExecutorsMetrics(executor);
+            Runtime.getRuntime().addShutdownHook(new Thread(executor::stop));
 
             {
-                Server jetty = createJettyServer(startupConfig, executors, queueWaitTimeoutMs, enableHttpBodyLog);
+                Server jetty = createJettyServer(startupConfig, executor, queueWaitTimeoutMs, enableHttpBodyLog);
                 jetty.start();
                 jetty.setStopAtShutdown(true);
             }
 
             {
-                Server managementServer = createManagementServer(startupConfig, executors, queueWaitTimeoutMs, enableHttpBodyLog);
+                Server managementServer = createManagementServer(startupConfig, executor, queueWaitTimeoutMs, enableHttpBodyLog);
                 managementServer.start();
                 managementServer.setStopAtShutdown(true);
             }
@@ -81,7 +87,7 @@ public class HttpPipelineApplication {
         }
     }
 
-    private static Server createManagementServer(IStartupConfig aStartupConfig, UpstreamExecutors executors, AtomicInteger aQueueWaitTimeout, AtomicBoolean enableHttpBodyLog) {
+    private static Server createManagementServer(IStartupConfig aStartupConfig, UpstreamExecutor executor, AtomicInteger aQueueWaitTimeout, AtomicBoolean enableHttpBodyLog) {
         Server                jetty   = new Server(aStartupConfig.managementServerPort());
         ServletContextHandler context = new ServletContextHandler(jetty, aStartupConfig.managementServerContext(), ServletContextHandler.SESSIONS);
 
@@ -92,13 +98,7 @@ public class HttpPipelineApplication {
         context.addServlet(new ServletHolder(new HttpServlet() {
             @Override
             protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-                resp.getWriter().println(executors.getActiveExecutorsCount());
-            }
-
-            @Override
-            protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-                executors.setActiveExecutors(Integer.parseInt(req.getParameter("count")));
-                resp.getWriter().println(executors.getActiveExecutorsCount());
+                resp.getWriter().println(executor.getActiveTasksCount());
             }
         }), "/active-executors/*");
 
@@ -109,7 +109,7 @@ public class HttpPipelineApplication {
         return jetty;
     }
 
-    private static Server createJettyServer(IStartupConfig aConfig, UpstreamExecutors executors, AtomicInteger aQeueuWaitTimeoutMs, AtomicBoolean enableHttpBodyLog) {
+    private static Server createJettyServer(IStartupConfig aConfig, UpstreamExecutor executor, AtomicInteger aQeueuWaitTimeoutMs, AtomicBoolean enableHttpBodyLog) {
         QueuedThreadPool threadPool = new QueuedThreadPool(
                   aConfig.getJettyMaxThreads()
                 , aConfig.getJettyMinThreads()
@@ -131,13 +131,17 @@ public class HttpPipelineApplication {
 
         registerJettyMetrics(jetty);
 
+        ThreadPoolExecutor logExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(aConfig.getUpstreamQueueSize()));
+        registerLogExecutorMetrics(logExecutor);
+
         ICacheKeyFactory cacheKeyFactory = new PathQueryBodyKeyFactory();
         ICacheManager    cacheManager    = new CacheManagerMemory(aConfig.getCacheMemoryMaximumSize(), aConfig.getCacheMemoryTtlMs());
         IHttpClient      httpClient      = new HttpClientWithCache(new HttpClient(), cacheManager, aConfig.getCacheMaximumBody());
 
         PipelineServlet pipelineServlet = new PipelineServlet(
                 aConfig.getUpstreamBaseUrl()
-                , executors
+                , executor
+                , logExecutor
                 , aConfig.getUpstreamConnectTimeoutMs()
                 , aConfig.getUpstreamReadTimeoutMs()
                 , aQeueuWaitTimeoutMs
@@ -182,12 +186,12 @@ public class HttpPipelineApplication {
         return buckets;
     }
 
-    private static void registerExecutorsMetrics(UpstreamExecutors executors) {
-//        new UpstreamExecutorsCollector(executors).register();
-        int i = 0;
-        for (UpstreamExecutor upstreamExecutor : executors.geExecutors()) {
-            new ThreadPoolExecutorCollector("executor_" + (i++), "help", upstreamExecutor).register();
-        }
+    private static void registerExecutorsMetrics(UpstreamExecutor executor) {
+        new UpstreamExecutorsCollector(executor).register();
+    }
+
+    private static void registerLogExecutorMetrics(ThreadPoolExecutor executor) {
+        new ThreadPoolExecutorCollector("log_executor", "help", executor).register();
     }
 
     private static void registerJettyMetrics(Server jetty) {
