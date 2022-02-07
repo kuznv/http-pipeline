@@ -37,9 +37,9 @@ public class HttpClient implements IHttpClient {
             connection.connect();
         } catch (IOException e) {
             if (connection.getErrorStream() != null) {
-                return new HttpResponse(502, InputStreams.readAll(connection.getErrorStream()), "Upstream unavailable: " + e.getMessage());
+                return new HttpResponse(502, InputStreams.readAll(connection.getErrorStream()), connection.getHeaderFields(), "Upstream unavailable: " + e.getMessage());
             } else {
-                return new HttpResponse(502, null, "Upstream unavailable: " + e.getMessage());
+                return new HttpResponse(502, null, connection.getHeaderFields(), "Upstream unavailable: " + e.getMessage());
             }
         }
 
@@ -54,14 +54,14 @@ public class HttpClient implements IHttpClient {
             LOG.debug("Response code is {} and content length is {}", responseCode, connection.getContentLength());
             byte[]      body        = InputStreams.readAll(inputStream);
 
-            return new HttpResponse(responseCode, body, null);
+            return new HttpResponse(responseCode, body, connection.getHeaderFields(), null);
         } catch (FileNotFoundException e) {
             LOG.error("Not found {} {}", aRequest.getUrl(), connection.getErrorStream(), e);
-            return new HttpResponse(404, InputStreams.readAll(connection.getErrorStream()), "Not Found in Upstream");
+            return new HttpResponse(404, InputStreams.readAll(connection.getErrorStream()), connection.getHeaderFields(), "Not Found in Upstream");
 
         } catch (Exception e) {
             LOG.error("Cannot execute POST", e);
-            return new HttpResponse(connection.getResponseCode(), InputStreams.readAll(connection.getErrorStream()), e.getMessage());
+            return new HttpResponse(connection.getResponseCode(), InputStreams.readAll(connection.getErrorStream()), connection.getHeaderFields(), e.getMessage());
         }
     }
 }

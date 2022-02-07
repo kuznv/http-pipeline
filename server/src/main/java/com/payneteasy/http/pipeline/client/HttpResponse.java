@@ -2,21 +2,25 @@ package com.payneteasy.http.pipeline.client;
 
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
 public class HttpResponse {
 
     private final int status;
     private final byte[] responseBody;
+    private final Map<String, List<String>> headerFields;
     private final String errorMessage;
 
-    public HttpResponse(int status, byte[] responseBody, String aErrorMessage) {
+    public HttpResponse(int status, byte[] responseBody, Map<String, List<String>> headerFields, String aErrorMessage) {
         this.status = status;
         this.responseBody = responseBody;
+        this.headerFields = headerFields;
         errorMessage = aErrorMessage;
     }
 
-    public static HttpResponse error(int aStatusCode, String aMessage) {
-        return new HttpResponse(aStatusCode, null, aMessage);
+    public static HttpResponse error(int aStatusCode, String aMessage, Map<String, List<String>> headerFields) {
+        return new HttpResponse(aStatusCode, null, headerFields, aMessage);
     }
 
     public String getErrorMessage() {
@@ -29,6 +33,10 @@ public class HttpResponse {
 
     public byte[] getResponseBody() {
         return responseBody;
+    }
+
+    public Map<String, List<String>> getHeaderFields() {
+        return headerFields;
     }
 
     public void dump(PrintWriter out) {

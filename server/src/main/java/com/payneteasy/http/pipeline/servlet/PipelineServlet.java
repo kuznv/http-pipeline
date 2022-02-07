@@ -7,8 +7,8 @@ import com.payneteasy.http.pipeline.client.HttpRequest;
 import com.payneteasy.http.pipeline.client.HttpResponse;
 import com.payneteasy.http.pipeline.client.IHttpClient;
 import com.payneteasy.http.pipeline.log.HttpBodyLog;
-import com.payneteasy.http.pipeline.upstream.UpstreamTask;
 import com.payneteasy.http.pipeline.upstream.UpstreamExecutor;
+import com.payneteasy.http.pipeline.upstream.UpstreamTask;
 import com.payneteasy.http.pipeline.util.InputStreams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -192,12 +193,18 @@ public class PipelineServlet extends HttpServlet {
     private void writeSuccess(HttpServletRequest aRequest, HttpServletResponse aResponse, HttpRequest httpRequest, HttpResponse upstreamResponse, int code) throws IOException {
         aResponse.setStatus(code);
         aResponse.getOutputStream().write(upstreamResponse.getResponseBody());
+
+        addHeaders(aResponse, upstreamResponse);
+
         logRequestResponse(aRequest, httpRequest, upstreamResponse);
     }
 
     private void writeError(HttpServletResponse aResponse, HttpRequest httpRequest, HttpResponse upstreamResponse, int code) throws IOException {
         aResponse.setStatus(code);
-        if(upstreamResponse.getResponseBody() == null) {
+
+        addHeaders(aResponse, upstreamResponse);
+
+        if (upstreamResponse.getResponseBody() == null) {
             LOG.warn("No response content from upstream");
         } else {
             String body = new String(upstreamResponse.getResponseBody(), StandardCharsets.UTF_8);
@@ -210,7 +217,24 @@ public class PipelineServlet extends HttpServlet {
 
     private void writeResponse(HttpServletResponse aResponse, HttpResponse aHttpResponse) throws IOException {
         aResponse.setStatus(aHttpResponse.getStatus());
+        addHeaders(aResponse, aHttpResponse);
         aResponse.getOutputStream().write(aHttpResponse.getResponseBody());
+    }
+
+    private void addHeaders(HttpServletResponse aResponse, HttpResponse upstreamResponse) {
+        Map<String, List<String>> headers = upstreamResponse.getHeaderFields();
+        if (headers == null) {
+            return;
+        }
+
+        for (Map.Entry<String, List<String>> header : headers.entrySet()) {
+            for (String value : header.getValue()) {
+                if (header.getKey() == null) {
+                    continue;
+                }
+                aResponse.addHeader(header.getKey(), value);
+            }
+        }
     }
 
     private void logRequestResponse(HttpServletRequest aRequest, HttpRequest httpRequest, HttpResponse upstreamResponse) {
